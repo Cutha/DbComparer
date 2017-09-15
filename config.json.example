@@ -1,0 +1,12 @@
+{
+    "db": {
+        "source": {
+            "connectionString": "<connection string>",
+            "table": "<table name without schema>"
+        },
+        "destination": {
+            "connectionString": "<connection string>",
+            "table": "<table name without schema>"
+        }
+    }
+}
