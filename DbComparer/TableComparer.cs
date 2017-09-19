@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Data.SqlClient;
 using System.Linq;
 using System.Text;
@@ -24,8 +25,8 @@ namespace DbComparer
 
         private SqlConnection srcConn;
         private SqlConnection destConn;
-        private Table srcTable = new Table();
-        private Table destTable = new Table();
+        private Table srcTable;
+        private Table destTable;
 
         /// <summary>
         /// Initializes a new instance of the DbComparer.TableComparer class.
@@ -68,30 +69,50 @@ namespace DbComparer
         /// <summary>
         /// Compares the source and destination tables.
         /// </summary>
-        /// <param name="sourceTable">The name of the source table without schema.</param>
-        /// <param name="destinationTable">The name of the destination table without schema.</param>
-        public void Compare(string sourceTable, string destinationTable)
+        /// <param name="srcTableName">The name of the source table without schema.</param>
+        /// <param name="destTableName">The name of the destination table without schema.</param>
+        public TableCompareResult Compare(string srcTableName, string destTableName)
         {
-            SqlCommand cmd;
-            using (cmd = new SqlCommand(@"
-                select t.object_id, s.name schema_name from sys.tables t
+            SqlCommand srcCmd = new SqlCommand(@"
+                select s.name schema_name, t.uses_ansi_nulls from sys.tables t
                 left join sys.schemas s on t.schema_id = s.schema_id
-                where t.name = @SRCTABLE", srcConn))
+                where t.name = @TABLE");
+            srcCmd.Parameters.Add("@TABLE", SqlDbType.NVarChar);
+            srcCmd.Parameters["@TABLE"].Value = srcTableName;
+            Task fetchSrcTable = Task.Run(() => GetTableInfo(srcCmd, srcConn, ref srcTable));
+            SqlCommand destCmd = new SqlCommand(srcCmd.CommandText);
+            destCmd.Parameters.Add("@TABLE", SqlDbType.NVarChar);
+            destCmd.Parameters["@TABLE"].Value = destTableName;
+            Task fetchDestTable = Task.Run(() => GetTableInfo(destCmd, destConn, ref destTable));
+            Task.WaitAll(fetchSrcTable, fetchDestTable);
+            TableCompareResult result;
+            if (srcTable.Equals(destTable))
             {
-                cmd.Parameters.AddWithValue("SRCTABLE", sourceTable);
+                result = new TableCompareResult(true, null);
+            }
+            else
+            {
+                result = new TableCompareResult(false, null);
+            }
+            return result;
+        }
+
+        private void GetTableInfo(SqlCommand cmd, SqlConnection conn, ref Table table)
+        {
+            cmd.Connection = conn;
+            using (cmd)
+            {
                 SqlDataReader reader = cmd.ExecuteReader();
                 if (reader.HasRows)
                 {
+                    table = new Table();
                     if (reader.Read())
                     {
-                        srcTable.ObjectId = reader.GetInt32(reader.GetOrdinal("object_id"));
-                        srcTable.Schema = reader.GetString(reader.GetOrdinal("schema_name"));
+                        table.Schema = reader.GetString(reader.GetOrdinal("schema_name"));
+                        table.UsesAnsiNulls = reader.GetBoolean(reader.GetOrdinal("uses_ansi_nulls"));
                     }
                 }
             }
-            Console.WriteLine("Table \"" + sourceTable + "\" -");
-            Console.WriteLine("ObjectId: " + srcTable.ObjectId);
-            Console.WriteLine("Schema: " + srcTable.Schema);
         }
 
         /// <summary>
@@ -101,10 +122,8 @@ namespace DbComparer
         {
             if (IsConnected)
             {
-                Console.WriteLine("Closing connections...");
                 srcConn.Close();
                 destConn.Close();
-                Console.WriteLine("Connections closed.");
             }
         }
     }

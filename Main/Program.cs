@@ -34,8 +34,10 @@ namespace Main
             using (TableComparer tc = new TableComparer(srcConnStr, destConnStr))
             {
                 tc.Connect();
-                tc.Compare(srcTable, destTable);
+                TableCompareResult result = tc.Compare(srcTable, destTable);
+                Console.WriteLine(result.IsEqual);
             }
+            Table table = new Table();
         }
     }
 
