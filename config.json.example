@@ -8,5 +8,6 @@
             "connectionString": "<connection string>",
             "table": "<table name without schema>"
         }
-    }
+    },
+    "outputPath" : "<file path for compare result output>"
 }

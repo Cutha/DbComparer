@@ -60,7 +60,7 @@ namespace DbComparer
                 destConn.Open();
                 IsConnected = true;
             }
-            catch (Exception e)
+            catch (Exception)
             {
                 IsConnected = false;
             }
@@ -69,36 +69,34 @@ namespace DbComparer
         /// <summary>
         /// Compares the source and destination tables.
         /// </summary>
-        /// <param name="srcTableName">The name of the source table without schema.</param>
-        /// <param name="destTableName">The name of the destination table without schema.</param>
-        public TableCompareResult Compare(string srcTableName, string destTableName)
+        /// <param name="srcTableName">The name of the source table (with schema if not dbo), e.g "admin.Employees".</param>
+        /// <param name="destTableName">The name of the destination table (with schema if not dbo), e.g "admin.Employees".</param>
+        public string Compare(string srcTableName, string destTableName)
         {
-            SqlCommand srcCmd = new SqlCommand(@"
-                select s.name schema_name, t.uses_ansi_nulls from sys.tables t
-                left join sys.schemas s on t.schema_id = s.schema_id
-                where t.name = @TABLE");
-            srcCmd.Parameters.Add("@TABLE", SqlDbType.NVarChar);
-            srcCmd.Parameters["@TABLE"].Value = srcTableName;
-            Task fetchSrcTable = Task.Run(() => GetTableInfo(srcCmd, srcConn, ref srcTable));
-            SqlCommand destCmd = new SqlCommand(srcCmd.CommandText);
-            destCmd.Parameters.Add("@TABLE", SqlDbType.NVarChar);
-            destCmd.Parameters["@TABLE"].Value = destTableName;
-            Task fetchDestTable = Task.Run(() => GetTableInfo(destCmd, destConn, ref destTable));
+            Task fetchSrcTable = Task.Run(() => GetTableInfo(srcTableName, srcConn, ref srcTable));
+            Task fetchDestTable = Task.Run(() => GetTableInfo(destTableName, destConn, ref destTable));
             Task.WaitAll(fetchSrcTable, fetchDestTable);
-            TableCompareResult result;
+            string result = "";
             if (srcTable.Equals(destTable))
             {
-                result = new TableCompareResult(true, null);
+                result = "Tables are the same.";
             }
             else
             {
-                result = new TableCompareResult(false, null);
+                result = srcTable.Diff(destTable);
             }
             return result;
         }
 
-        private void GetTableInfo(SqlCommand cmd, SqlConnection conn, ref Table table)
+        private void GetTableInfo(string tableName, SqlConnection conn, ref Table table)
         {
+            SqlCommand cmd = new SqlCommand(@"
+                select s.name schema_name, t.uses_ansi_nulls from sys.tables t
+                left join sys.schemas s on t.schema_id = s.schema_id
+                where t.object_id = OBJECT_ID(@TABLE)");
+            cmd.Parameters.Add("@TABLE", SqlDbType.NVarChar);
+            cmd.Parameters["@TABLE"].Value = tableName;
+            List<Column> columnList = new List<Column>();
             cmd.Connection = conn;
             using (cmd)
             {
@@ -112,7 +110,32 @@ namespace DbComparer
                         table.UsesAnsiNulls = reader.GetBoolean(reader.GetOrdinal("uses_ansi_nulls"));
                     }
                 }
+
+                // Get Columns info
+                cmd.CommandText = @"select c.name, c.user_type_id, ut.name user_type, c.system_type_id, st.name system_type, c.max_length, c.precision, c.is_nullable, c.is_identity from sys.columns c
+                    inner join sys.types ut on c.user_type_id = ut.user_type_id
+                    inner join sys.types st on c.system_type_id = st.user_type_id
+                    where c.object_id = OBJECT_ID(@TABLE)";
+                reader.Close();
+                reader = cmd.ExecuteReader();
+                if (reader.HasRows)
+                {
+                    while (reader.Read())
+                    {
+                        Column column = new Column();
+                        column.Name = reader.GetString(reader.GetOrdinal("name"));
+                        column.Type = reader.GetString(reader.GetOrdinal("user_type"));
+                        column.SystemType = reader.GetString(reader.GetOrdinal("system_type"));
+                        column.MaxLength = reader.GetInt16(reader.GetOrdinal("max_length"));
+                        column.Precision = reader.GetByte(reader.GetOrdinal("precision"));
+                        column.IsNullable = reader.GetBoolean(reader.GetOrdinal("is_nullable"));
+                        column.IsIdentity = reader.GetBoolean(reader.GetOrdinal("is_identity"));
+                        columnList.Add(column);
+                    }
+                }
             }
+            ColumnCollection columnCollection = new ColumnCollection(columnList);
+            table.Columns = columnCollection;
         }
 
         /// <summary>

@@ -34,10 +34,9 @@ namespace Main
             using (TableComparer tc = new TableComparer(srcConnStr, destConnStr))
             {
                 tc.Connect();
-                TableCompareResult result = tc.Compare(srcTable, destTable);
-                Console.WriteLine(result.IsEqual);
+                string result = tc.Compare(srcTable, destTable);
+                File.AppendAllText(config.OutputPath, result);
             }
-            Table table = new Table();
         }
     }
 
@@ -48,6 +47,7 @@ namespace Main
         public string DestinationConnectionString { get; set; }
         public string DestinationTable { get; set; }
         public bool IsLoaded { get; private set; }
+        public string OutputPath { get; private set; }
         private string folderPath = "";
 
         public Config()
@@ -79,6 +79,7 @@ namespace Main
                 dynamic obj = jsonSerializer.DeserializeObject(json);
                 var srcNode = obj["db"]["source"];
                 var destNode = obj["db"]["destination"];
+                OutputPath = obj["outputPath"];
                 SourceConnectionString = srcNode["connectionString"];
                 SourceTable = srcNode["table"];
                 DestinationConnectionString = destNode["connectionString"];

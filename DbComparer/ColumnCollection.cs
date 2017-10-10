@@ -42,6 +42,19 @@ namespace DbComparer
             get { return this[columnNameMappings[name]]; }
         }
 
+        /// <summary>
+        /// Gets whether this ColumnCollection object contains a column with the given name. This is an O(1) operation.
+        /// </summary>
+        /// <param name="name">The column name to find.</param>
+        /// <returns></returns>
+        public bool ContainsName(string name)
+        {
+            return columnNameMappings.ContainsKey(name);
+        }
+
+        /// <summary>
+        /// Gets the number of columns.
+        /// </summary>
         public int Count
         {
             get { return columns.Count; }
